@@ -1,5 +1,5 @@
 # ===============================
-# EXP-05: Random Forest Regressor (50 Trees)
+# EXP-06: Random Forest Regressor (100 Trees)
 # ===============================
 
 import pandas as pd
@@ -33,7 +33,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 # 4. Train model (Random Forest)
 # -------------------------------
 model = RandomForestRegressor(
-    n_estimators=50,
+    n_estimators=100,
     max_depth=10,
     random_state=42
 )
@@ -48,7 +48,7 @@ y_pred = model.predict(X_test)
 mse = mean_squared_error(y_test, y_pred)
 r2 = r2_score(y_test, y_pred)
 
-print("EXP-05: Random Forest Regressor (50 Trees)")
+print("EXP-06: Random Forest Regressor (100 Trees)")
 print("MSE:", mse)
 print("R2 Score:", r2)
 
@@ -60,9 +60,9 @@ os.makedirs("output", exist_ok=True)
 joblib.dump(model, "output/model.pkl")
 
 results = {
-    "Experiment": "EXP-05",
+    "Experiment": "EXP-06",
     "Model": "Random Forest Regressor",
-    "Trees": 50,
+    "Trees": 100,
     "Max Depth": 10,
     "Train/Test Split": "80/20",
     "MSE": mse,
