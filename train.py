@@ -1,3 +1,29 @@
+import pandas as pd
+import json
+import os
+import joblib
+
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score
+
+data = pd.read_csv("dataset/winequality-red.csv", sep=";")
+X = data.drop("quality", axis=1)
+y = data["quality"]
+
+
+os.makedirs("output", exist_ok=True)
+
+joblib.dump(model, "output/model.pkl")
+
+with open("output/results.json", "w") as f:
+    json.dump(results, f, indent=4)
+
+
+
+
+
+
+
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
