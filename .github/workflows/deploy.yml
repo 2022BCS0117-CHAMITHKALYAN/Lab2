@@ -56,56 +56,48 @@ jobs:
         name: exp-01-artifacts
         path: output
 
-    - name: Read metrics.json
-      id: metrics
+    - name: Read current F1 metric
+      id: readmetric
       run: |
         F1=$(python -c "import json; print(json.load(open('output/metrics.json'))['f1'])")
-        MSE=$(python -c "import json; print(json.load(open('output/metrics.json'))['mse'])")
         echo "f1=$F1" >> $GITHUB_OUTPUT
-        echo "mse=$MSE" >> $GITHUB_OUTPUT
 
     - name: Compare with BEST_F1
       id: compare
       run: |
-        echo "Current F1 = ${{ steps.metrics.outputs.f1 }}"
+        echo "Current F1 = ${{ steps.readmetric.outputs.f1 }}"
         echo "Best F1 = ${{ vars.BEST_F1 }}"
 
-        python - <<EOF
-import sys
-
-current = float("${{ steps.metrics.outputs.f1 }}")
-best = float("${{ vars.BEST_F1 }}")
-
-if current <= best:
-    print("Metric did NOT improve")
-    sys.exit(1)
-else:
-    print("Metric improved")
-EOF
+        if [ "$(echo "${{ steps.readmetric.outputs.f1 }} <= ${{ vars.BEST_F1 }}" | bc -l)" = "1" ]; then
+          echo "Metric did NOT improve"
+          exit 1
+        else
+          echo "Metric improved"
+        fi
 
     - name: Login to Docker Hub
-      if: ${{ success() }}
+      if: success()
       run: |
         echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
     - name: Build Docker image
-      if: ${{ success() }}
+      if: success()
       run: |
         docker build -t ${{ secrets.DOCKER_USERNAME }}/wine-infer:${{ github.run_number }} .
 
     - name: Push Docker image
-      if: ${{ success() }}
+      if: success()
       run: |
         docker push ${{ secrets.DOCKER_USERNAME }}/wine-infer:${{ github.run_number }}
 
     - name: Update BEST_F1 variable
-      if: ${{ success() }}
+      if: success()
       uses: actions/github-script@v6
       with:
         github-token: ${{ secrets.GH_PAT }}
         script: |
           const name = 'BEST_F1';
-          const value = '${{ steps.metrics.outputs.f1 }}';
+          const value = '${{ steps.readmetric.outputs.f1 }}';
           await github.request('PUT /repos/{owner}/{repo}/actions/variables/{name}', {
             owner: context.repo.owner,
             repo: context.repo.repo,
