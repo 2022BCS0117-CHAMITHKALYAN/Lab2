@@ -1,1 +1,120 @@
+name: CI-CD-ML
 
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  train:
+    name: Train model and upload artifacts
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: exp-01-artifacts
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run training script
+      run: |
+        python train.py
+
+    - name: Write results to Job Summary
+      run: |
+        echo "## Experiment Results" >> $GITHUB_STEP_SUMMARY
+        echo "**Name:** BOLLI CHAMITH KALYAN" >> $GITHUB_STEP_SUMMARY
+        echo "**Roll No:** 2022BCS0117" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        cat output/results.json >> $GITHUB_STEP_SUMMARY || true
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: exp-01-artifacts
+        path: output/
+
+  deploy:
+    name: Deploy if metric improves
+    needs: train
+    runs-on: ubuntu-latest
+    if: always()   # we'll handle metric decision inside the job
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Download artifacts from train job
+      uses: actions/download-artifact@v3
+      with:
+        name: exp-01-artifacts
+        path: output
+
+    - name: Read metrics JSON and set outputs
+      id: metrics
+      run: |
+        python - <<'PY'
+import json,sys
+m = json.load(open("output/metrics.json"))
+f1 = m.get("f1", 0)
+mse = m.get("mse", 9999)
+print(f"::set-output name=f1::{f1}")
+print(f"::set-output name=mse::{mse}")
+PY
+
+    - name: Check improvement against repo variable BEST_F1
+      id: compare
+      run: |
+        echo "Current F1 = ${{ steps.metrics.outputs.f1 }}"
+        echo "Repo BEST_F1 = ${{ vars.BEST_F1 }}"
+        python - <<'PY'
+import os,sys
+cur = float(os.getenv('GITHUB_STEP_SUMMARY', '0')) if False else float("${{ steps.metrics.outputs.f1 }}")
+best = float("${{ vars.BEST_F1 }}")
+if cur <= best:
+    print("METRIC_NOT_IMPROVED")
+    sys.exit(78)  # custom non-zero code; we'll exit early (but job will still be marked completed)
+else:
+    print("METRIC_IMPROVED")
+PY
+      # Note: exit 78 means we stop this job early but set it to failed; we prefer to gracefully skip below
+      # (we use exit code 78 to indicate no improvement - the workflow will still complete; keep reading below)
+
+    - name: Login to Docker Hub
+      if: ${{ always() && steps.compare.conclusion == 'success' }}
+      run: |
+        echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+    - name: Build Docker image
+      if: ${{ always() && steps.compare.conclusion == 'success' }}
+      run: |
+        docker build -t ${{ secrets.DOCKER_USERNAME }}/wine-infer:${{ github.run_number }} .
+
+    - name: Push Docker image
+      if: ${{ always() && steps.compare.conclusion == 'success' }}
+      run: |
+        docker push ${{ secrets.DOCKER_USERNAME }}/wine-infer:${{ github.run_number }}
+
+    - name: Update BEST_F1 repo variable via API
+      if: ${{ always() && steps.compare.conclusion == 'success' }}
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.GH_PAT }}
+        script: |
+          const name = 'BEST_F1';
+          const value = `${{ steps.metrics.outputs.f1 }}`;
+          await github.request('PUT /repos/{owner}/{repo}/actions/variables/{name}', {
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            name,
+            value
+          });
